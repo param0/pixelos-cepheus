@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <string name="cepheus_parts_name">Mi 9</string>
+
+    <string name="ai_key_title">Side button</string>
+    <string name="ai_key_summary">Choose what the side button does</string>
+
+    <string name="ai_key_action_title">Action</string>
+    <string name="ai_key_app_title">Application</string>
+    <string name="ai_key_app_none">Not selected</string>
+
+    <string-array name="ai_key_action_entries">
+        <item>Assistant</item>
+        <item>Open an app</item>
+        <item>Do nothing</item>
+    </string-array>
+
+    <string-array name="ai_key_action_values" translatable="false">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+    </string-array>
+    <string name="display_extras_title">Screen (Mi 9)</string>
+    <string name="window_blurs_title">Window blur</string>
+    <string name="window_blurs_summary">Background blur in the shade, dialogs and app transitions. Turning it off makes the UI lighter on this hardware.</string>
+    <string name="refresh_rate_title">Refresh rate</string>
+    <string name="refresh_rate_summary">Maximum screen refresh rate</string>
+    <string name="refresh_rate_hz">Hz</string>
+</resources>

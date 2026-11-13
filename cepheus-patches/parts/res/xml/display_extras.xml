@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- entries/entryValues заполняются в рантайме из Display.getSupportedModes(),
+         см. DisplayExtrasFragment.loadRates() -->
+    <ListPreference
+        android:key="refresh_rate"
+        android:summary="@string/refresh_rate_summary"
+        android:title="@string/refresh_rate_title" />
+
+    <SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:key="window_blurs"
+        android:summary="@string/window_blurs_summary"
+        android:title="@string/window_blurs_title" />
+
+</PreferenceScreen>

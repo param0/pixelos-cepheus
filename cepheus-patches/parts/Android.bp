@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: Apache-2.0
+
+android_app {
+    name: "CepheusParts",
+
+    srcs: ["src/**/*.java"],
+    resource_dirs: ["res"],
+
+    certificate: "platform",
+    platform_apis: true,
+    privileged: true,
+    system_ext_specific: true,
+
+    // даёт тему Theme.SubSettingsBase.Expressive, CollapsingToolbarBaseActivity
+    // и SettingsBasePreferenceFragment — ровно то же, чем пользуется XiaomiParts
+    static_libs: [
+        "org.lineageos.settings.resources",
+    ],
+}

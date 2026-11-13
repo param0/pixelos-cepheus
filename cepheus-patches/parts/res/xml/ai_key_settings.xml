@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<PreferenceScreen
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <ListPreference
+        android:defaultValue="0"
+        android:entries="@array/ai_key_action_entries"
+        android:entryValues="@array/ai_key_action_values"
+        android:key="ai_key_action"
+        android:title="@string/ai_key_action_title" />
+
+    <!-- entries/entryValues заполняются в рантайме списком установленных
+         приложений, см. AiKeySettingsFragment.loadApps() -->
+    <ListPreference
+        android:key="ai_key_app"
+        android:title="@string/ai_key_app_title" />
+
+</PreferenceScreen>

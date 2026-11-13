@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.lineageos.settings.cepheus"
+    android:versionCode="1"
+    android:versionName="1.0"
+    android:sharedUserId="android.uid.system">
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:label="@string/cepheus_parts_name"
+        android:theme="@style/Theme.SubSettingsBase.Expressive">
+
+        <!--
+             IA_SETTINGS + категория ia.system встраивают экран прямо в
+             приложение «Настройки» (раздел «Система»), отдельной иконки в
+             лаунчере нет. Тот же приём использует PopupCameraSettingsActivity
+             в XiaomiParts.
+        -->
+        <receiver
+            android:name=".BootCompletedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
+        <activity
+            android:name=".AiKeySettingsActivity"
+            android:exported="false"
+            android:label="@string/ai_key_title">
+            <intent-filter>
+                <action android:name="com.android.settings.action.IA_SETTINGS" />
+            </intent-filter>
+
+            <meta-data
+                android:name="com.android.settings.category"
+                android:value="com.android.settings.category.ia.system" />
+            <meta-data
+                android:name="com.android.settings.summary"
+                android:resource="@string/ai_key_summary" />
+            <meta-data
+                android:name="com.android.settings.icon"
+                android:resource="@drawable/ic_settings_cepheus" />
+        </activity>
+
+
+        <activity
+            android:name=".DisplayExtrasActivity"
+            android:exported="false"
+            android:label="@string/display_extras_title">
+            <intent-filter>
+                <action android:name="com.android.settings.action.IA_SETTINGS" />
+            </intent-filter>
+
+            <meta-data
+                android:name="com.android.settings.category"
+                android:value="com.android.settings.category.ia.display" />
+            <meta-data
+                android:name="com.android.settings.summary"
+                android:resource="@string/window_blurs_title" />
+            <meta-data
+                android:name="com.android.settings.icon"
+                android:resource="@drawable/ic_settings_cepheus" />
+        </activity>
+
+    </application>
+
+</manifest>

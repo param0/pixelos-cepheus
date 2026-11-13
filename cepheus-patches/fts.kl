@@ -1,0 +1,53 @@
+# Сгенерировано build-pixelos-cepheus.sh. НЕ ПРАВИТЬ РУКАМИ.
+#
+# Keylayout для тачскрина cepheus. Имя устройства "fts" задаётся драйвером:
+#   fts.c:7051  info->input_dev->name = FTS_TS_DRV_NAME;   /* "fts" */
+#
+# ЗАЧЕМ. При двойном тапе по погашенному экрану драйвер шлёт KEY_WAKEUP
+# (fts.c:3915, случай GEST_ID_DBLTAP). Своего keylayout у устройства не было,
+# поэтому применялся frameworks/base/data/keyboards/Generic.kl, а там:
+#       key 143   WAKEUP
+# то есть БЕЗ флага WAKE. Код превращался в клавишу, но разбудить устройство
+# не мог — именно WAKE говорит политике поднять экран. Отсюда «переключатель
+# есть, но не будит».
+#
+# ВАЖНО: свой .kl заменяет Generic.kl для устройства целиком, поэтому ниже
+# перечислены ВСЕ клавиши, которые регистрирует драйвер (fts.c:7093-7131),
+# со значениями ровно как в Generic.kl. Отличие одно — флаг WAKE у 143.
+# Коды BTN_INFO(338), KEY_INFO(358), KEY_GOTO(354) в Generic.kl не описаны,
+# поэтому не описаны и здесь.
+
+# двойной тап по погашенному экрану
+key 143   WAKEUP          WAKE
+
+# жесты-буквы (MIUI-наследие, Android их не использует)
+key 50    M
+key 24    O
+key 18    E
+key 17    W
+key 46    C
+key 38    L
+key 33    F
+key 47    V
+key 31    S
+key 44    Z
+key 150   EXPLORER
+
+# свайп-жесты
+key 105   DPAD_LEFT
+key 106   DPAD_RIGHT
+key 103   DPAD_UP
+key 108   DPAD_DOWN
+
+key 59    F1
+key 60    F2
+key 61    F3
+key 62    F4
+key 63    F5
+
+key 26    LEFT_BRACKET
+key 27    RIGHT_BRACKET
+
+key 172   HOME
+key 158   BACK
+key 139   MENU

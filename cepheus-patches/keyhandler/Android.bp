@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Библиотека грузится PathClassLoader'ом из system_server, поэтому это
+// именно java_library с installable, а не часть приложения. Путь к jar
+// прописан в оверлее: /system_ext/framework/cepheus-keyhandler.jar
+
+java_library {
+    name: "cepheus-keyhandler",
+    srcs: ["src/**/*.java"],
+    system_ext_specific: true,
+    installable: true,
+}

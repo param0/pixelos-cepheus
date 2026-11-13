@@ -1,0 +1,2 @@
+				qcom,mdss-dsi-timing-switch-command = [39 00 00 00 00 00 03 f0 5a 5a 39 00 00 00 00 00 03 fc 5a 5a 39 00 00 00 00 00 02 b0 23 39 00 00 00 00 00 02 d1 0f 39 00 00 00 00 00 0c e9 11 55 a6 75 a3 b9 a1 4a 00 8a 18 39 00 00 00 00 00 03 f0 a5 a5 39 01 00 00 00 00 03 fc a5 a5];
+				qcom,mdss-dsi-timing-switch-command-state = "dsi_lp_mode";

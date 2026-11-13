@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <string name="ai_key_title">Боковая кнопка</string>
+    <string name="ai_key_summary">Что делает боковая кнопка</string>
+
+    <string name="ai_key_action_title">Действие</string>
+    <string name="ai_key_app_title">Приложение</string>
+    <string name="ai_key_app_none">Не выбрано</string>
+
+    <string-array name="ai_key_action_entries">
+        <item>Ассистент</item>
+        <item>Открыть приложение</item>
+        <item>Ничего не делать</item>
+    </string-array>
+    <string name="display_extras_title">Экран (Mi 9)</string>
+    <string name="window_blurs_title">Размытие окон</string>
+    <string name="window_blurs_summary">Размытие фона в шторке, диалогах и при открытии/закрытии приложений. Выключение разгружает графику.</string>
+    <string name="refresh_rate_title">Частота обновления</string>
+    <string name="refresh_rate_summary">Максимальная частота обновления экрана</string>
+    <string name="refresh_rate_hz">Гц</string>
+</resources>
