@@ -72,20 +72,20 @@ lineage-sdk, вместе с ним пропал LiveDisplay, и управля�
 Склейка, Linux/macOS:
 
 ```
-cat PixelOS_cepheus-*.zip.part-* > PixelOS_cepheus.zip
+cat PixelOS_cepheus-17.0-20261112-1815.zip.part-* > PixelOS_cepheus-17.0-20261112-1815.zip
 ```
 
 Windows (PowerShell):
 
 ```
-cmd /c copy /b PixelOS_cepheus-*.zip.part-aa + PixelOS_cepheus-*.zip.part-ab PixelOS_cepheus.zip
+cmd /c copy /b PixelOS_cepheus-17.0-20261112-1815.zip.part-00 + PixelOS_cepheus-17.0-20261112-1815.zip.part-01 PixelOS_cepheus-17.0-20261112-1815.zip
 ```
 
 Проверьте контрольную сумму из `SHA256SUMS` и прошивайте:
 
 ```
 adb reboot sideload-auto-reboot
-adb sideload PixelOS_cepheus.zip
+adb sideload PixelOS_cepheus-17.0-20261112-1815.zip
 ```
 
 При первой установке — вайп data (f2fs).
