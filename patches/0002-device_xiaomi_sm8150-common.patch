@@ -1,0 +1,341 @@
+diff --git a/accessories/Android.bp b/accessories/Android.bp
+deleted file mode 100644
+index 7b0623f..0000000
+--- a/accessories/Android.bp
++++ /dev/null
+@@ -1,15 +0,0 @@
+-//
+-// SPDX-FileCopyrightText: 2026 The LineageOS Project
+-// SPDX-License-Identifier: Apache-2.0
+-//
+-
+-cc_binary {
+-    name: "vendor.lineage.accessories-service.xiaomi-sm8150",
+-    defaults: ["//hardware/xiaomi:vendor.lineage.accessories-service.xiaomi-defaults"],
+-    init_rc: ["vendor.lineage.accessories-service.xiaomi-sm8150.rc"],
+-    vintf_fragments: ["vendor.lineage.accessories-service.xiaomi-sm8150.xml"],
+-    srcs: [
+-        "MiPad5Keyboard.cpp",
+-        "service.cpp",
+-    ],
+-}
+diff --git a/accessories/MiPad5Keyboard.cpp b/accessories/MiPad5Keyboard.cpp
+deleted file mode 100644
+index 472edc9..0000000
+--- a/accessories/MiPad5Keyboard.cpp
++++ /dev/null
+@@ -1,98 +0,0 @@
+-/*
+- * SPDX-FileCopyrightText: 2024 The LineageOS Project
+- * SPDX-License-Identifier: Apache-2.0
+- */
+-
+-#include "MiPad5Keyboard.h"
+-
+-#define LOG_TAG "MiPad5Keyboard"
+-
+-#include <android-base/logging.h>
+-#include <Utils.h>
+-
+-namespace aidl {
+-namespace vendor {
+-namespace lineage {
+-namespace accessories {
+-
+-static const std::string kKeyboardConnectionStatusPath =
+-        "/sys/devices/platform/soc/soc:xiaomi_keyboard/xiaomi_keyboard_conn_status";
+-static const std::string kKeyboardEnabledPath =
+-        "/sys/devices/platform/soc/soc:xiaomi_keyboard/xiaomi_keyboard_enabled";
+-
+-MiPad5Keyboard::MiPad5Keyboard()
+-    : mConnectionStatusPoller(kKeyboardConnectionStatusPath, [this]() { onConnectedChanged(); }),
+-      mPendingUpdate(false),
+-      mEnabledPoller(kKeyboardEnabledPath, [this]() { onEnabledChanged(); }) {
+-    mAccessoryInfo = {
+-            .id = "keyboard:internal:1",
+-            .type = AccessoryType::KEYBOARD,
+-            .isPersistent = true,
+-            .displayName = "Xiaomi Keyboard",
+-            .displayId = "",
+-            .supportsToggling = true,
+-            .supportsBatteryQuerying = false,
+-    };
+-    mAccessoryStatus = AccessoryStatus::ENABLED;
+-
+-    // Power on the keyboard controller, the driver queries the connection state once it's up
+-    if (!writeToFile(kKeyboardConnectionStatusPath, "enable_keyboard")) {
+-        LOG(ERROR) << "Failed to write enable_keyboard to " << kKeyboardConnectionStatusPath;
+-    }
+-
+-    mConnectionStatusPoller.start();
+-    mEnabledPoller.start();
+-
+-    onConnectedChanged();
+-    onEnabledChanged();
+-}
+-
+-MiPad5Keyboard::~MiPad5Keyboard() = default;
+-
+-::ndk::ScopedAStatus MiPad5Keyboard::setEnabled(bool enabled) {
+-    if (!writeToFile(kKeyboardEnabledPath, enabled ? "1" : "0")) {
+-        LOG(ERROR) << "Failed to write to " << kKeyboardEnabledPath;
+-        return ::ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_STATE);
+-    }
+-
+-    mEnabled = enabled;
+-
+-    updateStatus();
+-
+-    return ::ndk::ScopedAStatus::ok();
+-}
+-
+-void MiPad5Keyboard::updateStatus() {
+-    mAccessoryStatus = !mConnected ? AccessoryStatus::DISCONNECTED
+-                       : mEnabled  ? AccessoryStatus::ENABLED
+-                                   : AccessoryStatus::DISABLED;
+-
+-    onAccessoryStatusUpdated();
+-}
+-
+-void MiPad5Keyboard::onConnectedChanged() {
+-    std::lock_guard lock(mDataMutex);
+-
+-    if (!readFromFile(kKeyboardConnectionStatusPath, mConnected)) {
+-        LOG(ERROR) << "Failed to read from " << kKeyboardConnectionStatusPath;
+-        return;
+-    }
+-
+-    updateStatus();
+-}
+-
+-void MiPad5Keyboard::onEnabledChanged() {
+-    std::lock_guard lock(mDataMutex);
+-
+-    if (!readFromFile(kKeyboardEnabledPath, mEnabled)) {
+-        LOG(ERROR) << "Failed to read from " << kKeyboardEnabledPath;
+-        return;
+-    }
+-
+-    updateStatus();
+-}
+-
+-}  // namespace accessories
+-}  // namespace lineage
+-}  // namespace vendor
+-}  // namespace aidl
+diff --git a/accessories/MiPad5Keyboard.h b/accessories/MiPad5Keyboard.h
+deleted file mode 100644
+index 2e8ce84..0000000
+--- a/accessories/MiPad5Keyboard.h
++++ /dev/null
+@@ -1,49 +0,0 @@
+-/*
+- * SPDX-FileCopyrightText: 2024 The LineageOS Project
+- * SPDX-License-Identifier: Apache-2.0
+- */
+-
+-#pragma once
+-
+-#include <aidl/vendor/lineage/accessories/Accessory.h>
+-#include <aidl/vendor/lineage/accessories/BnAccessory.h>
+-#include <atomic>
+-#include <mutex>
+-#include <SysfsPoller.h>
+-
+-namespace aidl {
+-namespace vendor {
+-namespace lineage {
+-namespace accessories {
+-
+-/**
+- * Mi Pad 5 (nabu) keyboard accessory.
+- */
+-class MiPad5Keyboard : public Accessory {
+-  public:
+-    MiPad5Keyboard();
+-    MiPad5Keyboard(const Accessory&) = delete;
+-
+-    ~MiPad5Keyboard();
+-
+-    ::ndk::ScopedAStatus setEnabled(bool enabled) override;
+-
+-  private:
+-    bool mConnected;
+-    SysfsPoller mConnectionStatusPoller;
+-    std::atomic<bool> mPendingUpdate;
+-
+-    bool mEnabled;
+-    SysfsPoller mEnabledPoller;
+-
+-    std::mutex mDataMutex;
+-
+-    void onConnectedChanged();
+-    void onEnabledChanged();
+-    void updateStatus();
+-};
+-
+-}  // namespace accessories
+-}  // namespace lineage
+-}  // namespace vendor
+-}  // namespace aidl
+diff --git a/accessories/service.cpp b/accessories/service.cpp
+deleted file mode 100644
+index ad451c2..0000000
+--- a/accessories/service.cpp
++++ /dev/null
+@@ -1,31 +0,0 @@
+-/*
+- * SPDX-FileCopyrightText: 2026 The LineageOS Project
+- * SPDX-License-Identifier: Apache-2.0
+- */
+-
+-#include <XiaomiAccessories.h>
+-
+-#include <android-base/logging.h>
+-#include <android/binder_manager.h>
+-#include <android/binder_process.h>
+-#include "MiPad5Keyboard.h"
+-
+-using aidl::vendor::lineage::accessories::MiPad5Keyboard;
+-using aidl::vendor::lineage::accessories::XiaomiAccessories;
+-
+-class Sm8150Accessories : public XiaomiAccessories {
+-  public:
+-    Sm8150Accessories() { addAccessory(::ndk::SharedRefBase::make<MiPad5Keyboard>()); }
+-};
+-
+-int main() {
+-    ABinderProcess_setThreadPoolMaxThreadCount(0);
+-    std::shared_ptr<Sm8150Accessories> hal = ::ndk::SharedRefBase::make<Sm8150Accessories>();
+-
+-    const std::string instance = std::string(Sm8150Accessories::descriptor) + "/default";
+-    binder_status_t status = AServiceManager_addService(hal->asBinder().get(), instance.c_str());
+-    CHECK_EQ(status, STATUS_OK);
+-
+-    ABinderProcess_joinThreadPool();
+-    return EXIT_FAILURE;  // should not reach
+-}
+diff --git a/accessories/vendor.lineage.accessories-service.xiaomi-sm8150.rc b/accessories/vendor.lineage.accessories-service.xiaomi-sm8150.rc
+deleted file mode 100644
+index d92c4d0..0000000
+--- a/accessories/vendor.lineage.accessories-service.xiaomi-sm8150.rc
++++ /dev/null
+@@ -1,19 +0,0 @@
+-#
+-# SPDX-FileCopyrightText: 2026 The LineageOS Project
+-# SPDX-License-Identifier: Apache-2.0
+-#
+-
+-on boot
+-    # Xiaomi Mi Pad 5 keyboard
+-    chown root root /sys/devices/platform/soc/soc:xiaomi_keyboard/xiaomi_keyboard_conn_status
+-    chown root root /sys/devices/platform/soc/soc:xiaomi_keyboard/xiaomi_keyboard_connected
+-    chown root root /sys/devices/platform/soc/soc:xiaomi_keyboard/xiaomi_keyboard_enabled
+-
+-    # Xiaomi Smart Pen
+-    chown root root /sys/touchpanel/pen
+-
+-service vendor.accessories-default /vendor/bin/hw/vendor.lineage.accessories-service.xiaomi-sm8150
+-    class hal
+-    user root
+-    group root
+-    shutdown critical
+diff --git a/accessories/vendor.lineage.accessories-service.xiaomi-sm8150.xml b/accessories/vendor.lineage.accessories-service.xiaomi-sm8150.xml
+deleted file mode 100644
+index 7b88135..0000000
+--- a/accessories/vendor.lineage.accessories-service.xiaomi-sm8150.xml
++++ /dev/null
+@@ -1,11 +0,0 @@
+-<!--
+-    SPDX-FileCopyrightText: 2026 The LineageOS Project
+-    SPDX-License-Identifier: Apache-2.0
+--->
+-<manifest version="1.0" type="device">
+-    <hal format="aidl">
+-        <name>vendor.lineage.accessories</name>
+-        <version>1</version>
+-        <fqname>IAccessories/default</fqname>
+-    </hal>
+-</manifest>
+diff --git a/msmnile.mk b/msmnile.mk
+index 2a8a3ec..68c34ca 100644
+--- a/msmnile.mk
++++ b/msmnile.mk
+@@ -82,11 +82,6 @@ PRODUCT_PACKAGES += \
+     otapreopt_script
+ endif
+ 
+-# Accessories
+-ifeq ($(TARGET_IS_TABLET),true)
+-PRODUCT_PACKAGES += \
+-    vendor.lineage.accessories-service.xiaomi-sm8150
+-endif
+ 
+ # Audio
+ PRODUCT_PACKAGES += \
+diff --git a/rro_overlays/SystemUIOverlayCommon/res/values/config.xml b/rro_overlays/SystemUIOverlayCommon/res/values/config.xml
+index d1cd2f4..8188fb2 100644
+--- a/rro_overlays/SystemUIOverlayCommon/res/values/config.xml
++++ b/rro_overlays/SystemUIOverlayCommon/res/values/config.xml
+@@ -30,5 +30,5 @@
+     <integer name="config_showUsbPortAlarm">1</integer>
+ 
+     <!-- Preferred max refresh rate at keyguard, if supported by the display. -->
+-    <integer name="config_keyguardMaxRefreshRate">60</integer>
++    <integer name="config_keyguardMaxRefreshRate">90</integer>
+ </resources>
+diff --git a/sepolicy/vendor/file_contexts b/sepolicy/vendor/file_contexts
+index b64ebae..7f84d4d 100644
+--- a/sepolicy/vendor/file_contexts
++++ b/sepolicy/vendor/file_contexts
+@@ -1,5 +1,4 @@
+ # Accessories
+-/vendor/bin/hw/vendor\.lineage\.accessories-service\.xiaomi-sm8150                                         u:object_r:hal_lineage_accessories_default_exec:s0
+ 
+ # Audio
+ /dev/socket/audio_hw_socket                                                                         u:object_r:vendor_audio_socket:s0
+diff --git a/sepolicy/vendor/hal_lineage_accessories_default.te b/sepolicy/vendor/hal_lineage_accessories_default.te
+deleted file mode 100644
+index b79600b..0000000
+--- a/sepolicy/vendor/hal_lineage_accessories_default.te
++++ /dev/null
+@@ -1,20 +0,0 @@
+-# Allow access to keyboard sysfs
+-allow hal_lineage_accessories_default sysfs_keyboard:dir r_dir_perms;
+-allow hal_lineage_accessories_default sysfs_keyboard:file rw_file_perms;
+-
+-# Allow access to touchpanel sysfs
+-allow hal_lineage_accessories_default sysfs_touchpanel:dir r_dir_perms;
+-allow hal_lineage_accessories_default sysfs_touchpanel:file rw_file_perms;
+-
+-# Allow access to USB devices
+-allow hal_lineage_accessories_default usb_device:dir r_dir_perms;
+-allow hal_lineage_accessories_default usb_device:{file chr_file} rw_file_perms;
+-
+-# /sys/bus/usb/devices access
+-allow hal_lineage_accessories_default sysfs:dir r_dir_perms;
+-allow hal_lineage_accessories_default sysfs:file rw_file_perms;
+-
+-# Allow listening to the wireless charger uevents and reading its state
+-allow hal_lineage_accessories_default self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
+-allow hal_lineage_accessories_default sysfs:lnk_file read;
+-r_dir_file(hal_lineage_accessories_default, sysfs_battery_supply)
+diff --git a/vendor.prop b/vendor.prop
+index 244edd2..905b56b 100644
+--- a/vendor.prop
++++ b/vendor.prop
+@@ -150,9 +150,6 @@ dalvik.vm.heapstartsize=8m
+ dalvik.vm.heaptargetutilization=0.75
+ 
+ # Display
+-persist.sys.sf.color_mode=9
+-persist.sys.sf.color_saturation=1.0
+-persist.sys.sf.native_mode=2
+ ro.surface_flinger.enable_frame_rate_override=false
+ ro.surface_flinger.has_HDR_display=true
+ ro.surface_flinger.has_wide_color_display=true
+@@ -274,3 +271,4 @@ wifi.aware.interface=wifi-aware0
+ 
+ # Zygote
+ zygote.critical_window.minute=10
++persist.sys.sf.native_mode=1

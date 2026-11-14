@@ -104,15 +104,15 @@ repo sync
 
 Ревизии, на которых собран этот релиз:
 
-| проект | ветка | коммит |
-|---|---|---|
-| `PixelOS-AOSP/android_manifest` | `seventeen` | `29f6010` |
-| `xiaomi-sm8150-devs/android_device_xiaomi_cepheus` | `lineage-23.2` | `3fae840` |
-| `xiaomi-sm8150-devs/android_device_xiaomi_sm8150-common` | `lineage-24.0` | `f498a68` |
-| `xiaomi-sm8150-devs/proprietary_vendor_xiaomi_cepheus` | `lineage-23.2` | `a85ef02` |
-| `xiaomi-sm8150-devs/proprietary_vendor_xiaomi_sm8150-common` | `lineage-24.0` | `65ef529` |
-| `xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150` | `lineage-24.0` | `c8c6230` |
-| `PixelOS-AOSP/android_hardware_xiaomi` | `seventeen` | `dae6cb6` |
+| проект | путь в дереве | ветка | коммит |
+|---|---|---|---|
+| [`android_manifest`](https://github.com/PixelOS-AOSP/android_manifest) | `.repo/manifests` | [`seventeen`](https://github.com/PixelOS-AOSP/android_manifest/tree/seventeen) | [`29f6010`](https://github.com/PixelOS-AOSP/android_manifest/commit/29f6010) |
+| [`android_device_xiaomi_cepheus`](https://github.com/xiaomi-sm8150-devs/android_device_xiaomi_cepheus) | `device/xiaomi/cepheus` | [`lineage-23.2`](https://github.com/xiaomi-sm8150-devs/android_device_xiaomi_cepheus/tree/lineage-23.2) | [`3fae840`](https://github.com/xiaomi-sm8150-devs/android_device_xiaomi_cepheus/commit/3fae840) |
+| [`android_device_xiaomi_sm8150-common`](https://github.com/xiaomi-sm8150-devs/android_device_xiaomi_sm8150-common) | `device/xiaomi/sm8150-common` | [`lineage-24.0`](https://github.com/xiaomi-sm8150-devs/android_device_xiaomi_sm8150-common/tree/lineage-24.0) | [`f498a68`](https://github.com/xiaomi-sm8150-devs/android_device_xiaomi_sm8150-common/commit/f498a68) |
+| [`proprietary_vendor_xiaomi_cepheus`](https://github.com/xiaomi-sm8150-devs/proprietary_vendor_xiaomi_cepheus) | `vendor/xiaomi/cepheus` | [`lineage-23.2`](https://github.com/xiaomi-sm8150-devs/proprietary_vendor_xiaomi_cepheus/tree/lineage-23.2) | [`a85ef02`](https://github.com/xiaomi-sm8150-devs/proprietary_vendor_xiaomi_cepheus/commit/a85ef02) |
+| [`proprietary_vendor_xiaomi_sm8150-common`](https://github.com/xiaomi-sm8150-devs/proprietary_vendor_xiaomi_sm8150-common) | `vendor/xiaomi/sm8150-common` | [`lineage-24.0`](https://github.com/xiaomi-sm8150-devs/proprietary_vendor_xiaomi_sm8150-common/tree/lineage-24.0) | [`65ef529`](https://github.com/xiaomi-sm8150-devs/proprietary_vendor_xiaomi_sm8150-common/commit/65ef529) |
+| [`android_kernel_xiaomi_sm8150`](https://github.com/xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150) | `kernel/xiaomi/sm8150` | [`lineage-24.0`](https://github.com/xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150/tree/lineage-24.0) | [`c8c6230`](https://github.com/xiaomi-sm8150-devs/android_kernel_xiaomi_sm8150/commit/c8c6230) |
+| [`android_hardware_xiaomi`](https://github.com/PixelOS-AOSP/android_hardware_xiaomi) | `hardware/xiaomi` | [`seventeen`](https://github.com/PixelOS-AOSP/android_hardware_xiaomi/tree/seventeen) | [`dae6cb6`](https://github.com/PixelOS-AOSP/android_hardware_xiaomi/commit/dae6cb6) |
 
 Запуск:
 
@@ -123,6 +123,26 @@ bash build-pixelos-cepheus.sh
 Скрипт сам поднимает `repo init`/`sync`, создаёт local manifest, применяет
 правки и собирает. Полезные переопределения перечислены в его шапке;
 `PANEL_90HZ=1` включает экспериментальные режимы панели (см. ниже).
+
+### Патчи
+
+Если собираете вручную или просто хотите посмотреть, что именно изменено,
+в каталоге `patches/` лежат готовые диффы против указанных выше коммитов:
+
+| файл | дерево | что внутри |
+|---|---|---|
+| `0001-device_xiaomi_cepheus.patch` | `device/xiaomi/cepheus` | продукт `custom_cepheus`, keylayout'ы, обработчик клавиши, приложение `CepheusParts`, цветовые режимы и отступ от скруглений, AOT-оптимизация — 21 файл |
+| `0002-device_xiaomi_sm8150-common.patch` | `device/xiaomi/sm8150-common` | дефолтный цветовой режим, потолок частоты на локскрине, вырезанный блок `accessories` — 11 файлов |
+| `0003-kernel_xiaomi_sm8150-90hz-EXPERIMENTAL.patch` | `kernel/xiaomi/sm8150` | **не применён в релизе.** Режимы 72/81/90 Гц для всех шести ревизий панели. Работает нестабильно, подробности ниже |
+
+Применяются обычным `git apply` из корня соответствующего дерева:
+
+```
+cd device/xiaomi/cepheus && git apply /путь/к/patches/0001-device_xiaomi_cepheus.patch
+```
+
+Запускать скрипт после этого не нужно — он делает ровно то же самое, просто
+идемпотентно и с комментариями. Патчи полезнее для чтения и ревью.
 
 ### Про адаптацию Android 16 → 17
 

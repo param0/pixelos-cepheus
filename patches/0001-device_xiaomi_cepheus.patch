@@ -1,0 +1,1026 @@
+diff --git a/AndroidProducts.mk b/AndroidProducts.mk
+index 275a448..3b6a85e 100644
+--- a/AndroidProducts.mk
++++ b/AndroidProducts.mk
+@@ -1,8 +1,14 @@
+ #
+-# Copyright (C) 2021-2022 The LineageOS Project
++# Сгенерировано build-pixelos-cepheus.sh. НЕ ПРАВИТЬ РУКАМИ.
+ #
+ # SPDX-License-Identifier: Apache-2.0
+ #
+ 
+ PRODUCT_MAKEFILES := \
++    $(LOCAL_DIR)/custom_cepheus.mk \
+     $(LOCAL_DIR)/lineage_cepheus.mk
++
++COMMON_LUNCH_CHOICES := \
++    custom_cepheus-cp2a-user \
++    custom_cepheus-cp2a-userdebug \
++    custom_cepheus-cp2a-eng
+diff --git a/custom_cepheus.mk b/custom_cepheus.mk
+new file mode 100644
+index 0000000..ed100b8
+--- /dev/null
++++ b/custom_cepheus.mk
+@@ -0,0 +1,44 @@
++#
++# Сгенерировано build-pixelos-cepheus.sh из lineage_cepheus.mk. НЕ ПРАВИТЬ РУКАМИ.
++#
++#
++# Copyright (C) 2021-2022 The LineageOS Project
++#
++# SPDX-License-Identifier: Apache-2.0
++#
++
++# Inherit from those products. Most specific first.
++$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
++$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
++
++# Inherit some common Lineage stuff.
++$(call inherit-product, vendor/custom/config/common_full_phone.mk)
++
++# Inherit from cepheus device
++$(call inherit-product, device/xiaomi/cepheus/device.mk)
++
++PRODUCT_NAME := custom_cepheus
++PRODUCT_DEVICE := cepheus
++PRODUCT_MANUFACTURER := Xiaomi
++PRODUCT_BRAND := Xiaomi
++PRODUCT_MODEL := MI 9
++
++PRODUCT_GMS_CLIENTID_BASE := android-xiaomi
++
++PRODUCT_BUILD_PROP_OVERRIDES += \
++    BuildDesc="cepheus-user 11 RKQ1.200826.002 V12.5.1.0.RFAMIXM release-keys" \
++    BuildFingerprint=Xiaomi/cepheus/cepheus:11/RKQ1.200826.002/V12.5.1.0.RFAMIXM:user/release-keys
++
++# ----------------------------------------------------------------------------
++# EPPE (Enforce Product Packages Exist) — выключен осознанно.
++#
++# vendor/custom/config/common.mk по умолчанию требует, чтобы КАЖДЫЙ пакет из
++# PRODUCT_PACKAGES существовал как модуль. Дерево sm8150-common писалось под
++# LineageOS и тянет пакеты, которых в PixelOS нет: lineage-sdk в форке PixelOS
++# отключён жёстко (vendor/lineage/config/common.mk: TARGET_DISABLE_LINEAGE_SDK
++# = true), поэтому org.lineageos.platform и его спутники не собираются вообще.
++# С включённым EPPE сборка падает на product_config, не дойдя до компиляции.
++# Отключаем проверку, а не вырезаем пакеты: вырезание развалит обновление
++# деревьев из апстрима.
++# ----------------------------------------------------------------------------
++TARGET_DISABLE_EPPE := true
+diff --git a/device.mk b/device.mk
+index 6fc8e32..adf3b1b 100644
+--- a/device.mk
++++ b/device.mk
+@@ -50,3 +50,18 @@ PRODUCT_SOONG_NAMESPACES += \
+ 
+ # Inherit from vendor blobs
+ $(call inherit-product, vendor/xiaomi/cepheus/cepheus-vendor.mk)
++
++# Keylayout: боковая кнопка «AI» -> ассистент (см. P5 в build-pixelos-cepheus.sh)
++PRODUCT_PACKAGES += \
++    gpio-keys.kl \
++    fts.kl
++
++# Боковая клавиша: обработчик + экран настроек (см. P7 в build-pixelos-cepheus.sh)
++PRODUCT_PACKAGES += \
++    cepheus-keyhandler \
++    CepheusParts
++
++# AOT speed для процессов, рисующих UI (см. P10 в build-pixelos-cepheus.sh)
++PRODUCT_DEXPREOPT_SPEED_APPS += \
++    SystemUI \
++    NexusLauncherRelease
+diff --git a/keyhandler/Android.bp b/keyhandler/Android.bp
+new file mode 100644
+index 0000000..e17f1fd
+--- /dev/null
++++ b/keyhandler/Android.bp
+@@ -0,0 +1,12 @@
++// SPDX-License-Identifier: Apache-2.0
++//
++// Библиотека грузится PathClassLoader'ом из system_server, поэтому это
++// именно java_library с installable, а не часть приложения. Путь к jar
++// прописан в оверлее: /system_ext/framework/cepheus-keyhandler.jar
++
++java_library {
++    name: "cepheus-keyhandler",
++    srcs: ["src/**/*.java"],
++    system_ext_specific: true,
++    installable: true,
++}
+diff --git a/keyhandler/src/org/lineageos/settings/cepheus/keyhandler/KeyHandler.java b/keyhandler/src/org/lineageos/settings/cepheus/keyhandler/KeyHandler.java
+new file mode 100644
+index 0000000..2e878c7
+--- /dev/null
++++ b/keyhandler/src/org/lineageos/settings/cepheus/keyhandler/KeyHandler.java
+@@ -0,0 +1,131 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Обработчик боковой клавиши «AI» на Xiaomi Mi 9 (cepheus).
++ *
++ * Загружается не приложением, а самим system_server: PhoneWindowManager
++ * читает config_deviceKeyHandlerLibs / config_deviceKeyHandlerClasses и
++ * создаёт этот класс через PathClassLoader (PhoneWindowManager.java:2617).
++ * Вызов идёт из interceptKeyBeforeQueueing (строка 4740) — то есть ДО
++ * switch(keyCode), который обрабатывает KEYCODE_ASSIST на строке 5050.
++ * Благодаря этому мы получаем клавишу первыми и решаем, что с ней делать.
++ *
++ * Контракт DeviceKeyHandler: вернуть null — событие поглощено, вернуть
++ * сам event — пропустить дальше по обычному пути.
++ */
++
++package org.lineageos.settings.cepheus.keyhandler;
++
++import android.app.SearchManager;
++import android.content.Context;
++import android.content.Intent;
++import android.content.pm.PackageManager;
++import android.os.Bundle;
++import android.os.SystemClock;
++import android.os.UserHandle;
++import android.provider.Settings;
++import android.util.Log;
++import android.view.KeyEvent;
++
++import com.android.internal.app.AssistUtils;
++import com.android.internal.os.DeviceKeyHandler;
++
++public class KeyHandler implements DeviceKeyHandler {
++
++    private static final String TAG = "CepheusKeyHandler";
++
++    /**
++     * KEY_AI = 0x2b1 (include/uapi/linux/input-event-codes.h:647).
++     * Именно этот код объявлен для клавиши в cepheus-sm8150.dtsi:254.
++     */
++    private static final int SCANCODE_AI_KEY = 689;
++
++    /** Ключи в Settings.System — их пишет экран настроек CepheusParts. */
++    public static final String SETTING_ACTION = "cepheus_ai_key_action";
++    public static final String SETTING_PACKAGE = "cepheus_ai_key_package";
++
++    public static final int ACTION_ASSISTANT = 0;
++    public static final int ACTION_APP = 1;
++    public static final int ACTION_NOTHING = 2;
++
++    private final Context mContext;
++
++    public KeyHandler(Context context) {
++        mContext = context;
++    }
++
++    @Override
++    public KeyEvent handleKeyEvent(KeyEvent event) {
++        if (event.getScanCode() != SCANCODE_AI_KEY) {
++            return event;
++        }
++
++        final int action = Settings.System.getIntForUser(mContext.getContentResolver(),
++                SETTING_ACTION, ACTION_ASSISTANT, UserHandle.USER_CURRENT);
++
++        // Реагируем только на первое нажатие. Отпускание и автоповтор глушим,
++        // чтобы KEYCODE_ASSIST не утёк в приложение.
++        if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() != 0) {
++            return null;
++        }
++
++        if (action == ACTION_ASSISTANT) {
++            launchAssistant();
++        } else if (action == ACTION_APP) {
++            launchApp();
++        }
++
++        return null;
++    }
++
++    /**
++     * Поднимает ассистента так же, как угловой свайп, — всплывающим окном
++     * поверх текущего экрана, а не запуском приложения на весь экран.
++     *
++     * Разницу делает единственный extra: AssistUtils.INVOCATION_TYPE_KEY.
++     * Значение INVOCATION_TYPE_GESTURE (1) соответствует экранному жесту, и
++     * ассистент показывает компактный оверлей. Если отдать событие дальше
++     * в PhoneWindowManager, тот вызовет launchAssistAction с типом для
++     * физической клавиши, и откроется полноэкранное приложение.
++     */
++    private void launchAssistant() {
++        final Bundle args = new Bundle();
++        args.putInt(AssistUtils.INVOCATION_TYPE_KEY, AssistUtils.INVOCATION_TYPE_GESTURE);
++        args.putLong(Intent.EXTRA_TIME, SystemClock.uptimeMillis());
++
++        final SearchManager sm = mContext.getSystemService(SearchManager.class);
++        if (sm == null) {
++            Log.w(TAG, "SearchManager недоступен");
++            return;
++        }
++        try {
++            sm.launchAssist(args);
++        } catch (Exception e) {
++            Log.e(TAG, "Не удалось вызвать ассистента", e);
++        }
++    }
++
++    private void launchApp() {
++        final String pkg = Settings.System.getStringForUser(mContext.getContentResolver(),
++                SETTING_PACKAGE, UserHandle.USER_CURRENT);
++        if (pkg == null || pkg.isEmpty()) {
++            Log.w(TAG, "Приложение для боковой клавиши не выбрано");
++            return;
++        }
++
++        final PackageManager pm = mContext.getPackageManager();
++        final Intent intent = pm.getLaunchIntentForPackage(pkg);
++        if (intent == null) {
++            Log.w(TAG, "У пакета " + pkg + " нет launch-intent, пропускаю");
++            return;
++        }
++
++        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
++                | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
++        try {
++            mContext.startActivityAsUser(intent, UserHandle.CURRENT);
++        } catch (Exception e) {
++            Log.e(TAG, "Не удалось запустить " + pkg, e);
++        }
++    }
++}
+diff --git a/keylayout/Android.bp b/keylayout/Android.bp
+new file mode 100644
+index 0000000..7c06d6e
+--- /dev/null
++++ b/keylayout/Android.bp
+@@ -0,0 +1,14 @@
++// Сгенерировано build-pixelos-cepheus.sh. НЕ ПРАВИТЬ РУКАМИ.
++// SPDX-License-Identifier: Apache-2.0
++
++prebuilt_usr_keylayout {
++    name: "gpio-keys.kl",
++    src: "gpio-keys.kl",
++    vendor: true,
++}
++
++prebuilt_usr_keylayout {
++    name: "fts.kl",
++    src: "fts.kl",
++    vendor: true,
++}
+diff --git a/keylayout/fts.kl b/keylayout/fts.kl
+new file mode 100644
+index 0000000..d11df03
+--- /dev/null
++++ b/keylayout/fts.kl
+@@ -0,0 +1,53 @@
++# Сгенерировано build-pixelos-cepheus.sh. НЕ ПРАВИТЬ РУКАМИ.
++#
++# Keylayout для тачскрина cepheus. Имя устройства "fts" задаётся драйвером:
++#   fts.c:7051  info->input_dev->name = FTS_TS_DRV_NAME;   /* "fts" */
++#
++# ЗАЧЕМ. При двойном тапе по погашенному экрану драйвер шлёт KEY_WAKEUP
++# (fts.c:3915, случай GEST_ID_DBLTAP). Своего keylayout у устройства не было,
++# поэтому применялся frameworks/base/data/keyboards/Generic.kl, а там:
++#       key 143   WAKEUP
++# то есть БЕЗ флага WAKE. Код превращался в клавишу, но разбудить устройство
++# не мог — именно WAKE говорит политике поднять экран. Отсюда «переключатель
++# есть, но не будит».
++#
++# ВАЖНО: свой .kl заменяет Generic.kl для устройства целиком, поэтому ниже
++# перечислены ВСЕ клавиши, которые регистрирует драйвер (fts.c:7093-7131),
++# со значениями ровно как в Generic.kl. Отличие одно — флаг WAKE у 143.
++# Коды BTN_INFO(338), KEY_INFO(358), KEY_GOTO(354) в Generic.kl не описаны,
++# поэтому не описаны и здесь.
++
++# двойной тап по погашенному экрану
++key 143   WAKEUP          WAKE
++
++# жесты-буквы (MIUI-наследие, Android их не использует)
++key 50    M
++key 24    O
++key 18    E
++key 17    W
++key 46    C
++key 38    L
++key 33    F
++key 47    V
++key 31    S
++key 44    Z
++key 150   EXPLORER
++
++# свайп-жесты
++key 105   DPAD_LEFT
++key 106   DPAD_RIGHT
++key 103   DPAD_UP
++key 108   DPAD_DOWN
++
++key 59    F1
++key 60    F2
++key 61    F3
++key 62    F4
++key 63    F5
++
++key 26    LEFT_BRACKET
++key 27    RIGHT_BRACKET
++
++key 172   HOME
++key 158   BACK
++key 139   MENU
+diff --git a/keylayout/gpio-keys.kl b/keylayout/gpio-keys.kl
+new file mode 100644
+index 0000000..8bfe42e
+--- /dev/null
++++ b/keylayout/gpio-keys.kl
+@@ -0,0 +1,10 @@
++# Сгенерировано build-pixelos-cepheus.sh. НЕ ПРАВИТЬ РУКАМИ.
++#
++# Узел gpio_keys у cepheus содержит ДВЕ клавиши, обе должны быть здесь:
++# этот файл целиком заменяет Generic.kl для устройства "gpio-keys".
++
++# качелька громкости вверх (KEY_VOLUMEUP)
++key 115   VOLUME_UP
++
++# боковая кнопка «AI» (KEY_AI = 0x2b1) -> ассистент по умолчанию, т.е. Gemini
++key 689   ASSIST   WAKE
+diff --git a/parts/Android.bp b/parts/Android.bp
+new file mode 100644
+index 0000000..1fd610c
+--- /dev/null
++++ b/parts/Android.bp
+@@ -0,0 +1,19 @@
++// SPDX-License-Identifier: Apache-2.0
++
++android_app {
++    name: "CepheusParts",
++
++    srcs: ["src/**/*.java"],
++    resource_dirs: ["res"],
++
++    certificate: "platform",
++    platform_apis: true,
++    privileged: true,
++    system_ext_specific: true,
++
++    // даёт тему Theme.SubSettingsBase.Expressive, CollapsingToolbarBaseActivity
++    // и SettingsBasePreferenceFragment — ровно то же, чем пользуется XiaomiParts
++    static_libs: [
++        "org.lineageos.settings.resources",
++    ],
++}
+diff --git a/parts/AndroidManifest.xml b/parts/AndroidManifest.xml
+new file mode 100644
+index 0000000..f047d78
+--- /dev/null
++++ b/parts/AndroidManifest.xml
+@@ -0,0 +1,71 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- SPDX-License-Identifier: Apache-2.0 -->
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="org.lineageos.settings.cepheus"
++    android:versionCode="1"
++    android:versionName="1.0"
++    android:sharedUserId="android.uid.system">
++
++    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
++
++    <application
++        android:label="@string/cepheus_parts_name"
++        android:theme="@style/Theme.SubSettingsBase.Expressive">
++
++        <!--
++             IA_SETTINGS + категория ia.system встраивают экран прямо в
++             приложение «Настройки» (раздел «Система»), отдельной иконки в
++             лаунчере нет. Тот же приём использует PopupCameraSettingsActivity
++             в XiaomiParts.
++        -->
++        <receiver
++            android:name=".BootCompletedReceiver"
++            android:exported="false">
++            <intent-filter>
++                <action android:name="android.intent.action.BOOT_COMPLETED" />
++                <category android:name="android.intent.category.DEFAULT" />
++            </intent-filter>
++        </receiver>
++
++        <activity
++            android:name=".AiKeySettingsActivity"
++            android:exported="false"
++            android:label="@string/ai_key_title">
++            <intent-filter>
++                <action android:name="com.android.settings.action.IA_SETTINGS" />
++            </intent-filter>
++
++            <meta-data
++                android:name="com.android.settings.category"
++                android:value="com.android.settings.category.ia.system" />
++            <meta-data
++                android:name="com.android.settings.summary"
++                android:resource="@string/ai_key_summary" />
++            <meta-data
++                android:name="com.android.settings.icon"
++                android:resource="@drawable/ic_settings_cepheus" />
++        </activity>
++
++
++        <activity
++            android:name=".DisplayExtrasActivity"
++            android:exported="false"
++            android:label="@string/display_extras_title">
++            <intent-filter>
++                <action android:name="com.android.settings.action.IA_SETTINGS" />
++            </intent-filter>
++
++            <meta-data
++                android:name="com.android.settings.category"
++                android:value="com.android.settings.category.ia.display" />
++            <meta-data
++                android:name="com.android.settings.summary"
++                android:resource="@string/window_blurs_title" />
++            <meta-data
++                android:name="com.android.settings.icon"
++                android:resource="@drawable/ic_settings_cepheus" />
++        </activity>
++
++    </application>
++
++</manifest>
+diff --git a/parts/res/drawable/ic_settings_cepheus.xml b/parts/res/drawable/ic_settings_cepheus.xml
+new file mode 100644
+index 0000000..ba6995d
+--- /dev/null
++++ b/parts/res/drawable/ic_settings_cepheus.xml
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- SPDX-License-Identifier: Apache-2.0 -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24"
++    android:tint="?android:attr/colorControlNormal">
++    <path
++        android:fillColor="@android:color/white"
++        android:pathData="M17,1.01L7,1C5.9,1 5,1.9 5,3v18c0,1.1 0.9,2 2,2h10c1.1,0 2,-0.9 2,-2V3C19,1.9 18.1,1.01 17,1.01zM17,19H7V5h10V19z" />
++</vector>
+diff --git a/parts/res/values-ru/strings.xml b/parts/res/values-ru/strings.xml
+new file mode 100644
+index 0000000..2cbb6ea
+--- /dev/null
++++ b/parts/res/values-ru/strings.xml
+@@ -0,0 +1,22 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- SPDX-License-Identifier: Apache-2.0 -->
++<resources>
++    <string name="ai_key_title">Боковая кнопка</string>
++    <string name="ai_key_summary">Что делает боковая кнопка</string>
++
++    <string name="ai_key_action_title">Действие</string>
++    <string name="ai_key_app_title">Приложение</string>
++    <string name="ai_key_app_none">Не выбрано</string>
++
++    <string-array name="ai_key_action_entries">
++        <item>Ассистент</item>
++        <item>Открыть приложение</item>
++        <item>Ничего не делать</item>
++    </string-array>
++    <string name="display_extras_title">Экран (Mi 9)</string>
++    <string name="window_blurs_title">Размытие окон</string>
++    <string name="window_blurs_summary">Размытие фона в шторке, диалогах и при открытии/закрытии приложений. Выключение разгружает графику.</string>
++    <string name="refresh_rate_title">Частота обновления</string>
++    <string name="refresh_rate_summary">Максимальная частота обновления экрана</string>
++    <string name="refresh_rate_hz">Гц</string>
++</resources>
+diff --git a/parts/res/values/strings.xml b/parts/res/values/strings.xml
+new file mode 100644
+index 0000000..9e80972
+--- /dev/null
++++ b/parts/res/values/strings.xml
+@@ -0,0 +1,30 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- SPDX-License-Identifier: Apache-2.0 -->
++<resources>
++    <string name="cepheus_parts_name">Mi 9</string>
++
++    <string name="ai_key_title">Side button</string>
++    <string name="ai_key_summary">Choose what the side button does</string>
++
++    <string name="ai_key_action_title">Action</string>
++    <string name="ai_key_app_title">Application</string>
++    <string name="ai_key_app_none">Not selected</string>
++
++    <string-array name="ai_key_action_entries">
++        <item>Assistant</item>
++        <item>Open an app</item>
++        <item>Do nothing</item>
++    </string-array>
++
++    <string-array name="ai_key_action_values" translatable="false">
++        <item>0</item>
++        <item>1</item>
++        <item>2</item>
++    </string-array>
++    <string name="display_extras_title">Screen (Mi 9)</string>
++    <string name="window_blurs_title">Window blur</string>
++    <string name="window_blurs_summary">Background blur in the shade, dialogs and app transitions. Turning it off makes the UI lighter on this hardware.</string>
++    <string name="refresh_rate_title">Refresh rate</string>
++    <string name="refresh_rate_summary">Maximum screen refresh rate</string>
++    <string name="refresh_rate_hz">Hz</string>
++</resources>
+diff --git a/parts/res/xml/ai_key_settings.xml b/parts/res/xml/ai_key_settings.xml
+new file mode 100644
+index 0000000..1ce0a49
+--- /dev/null
++++ b/parts/res/xml/ai_key_settings.xml
+@@ -0,0 +1,19 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- SPDX-License-Identifier: Apache-2.0 -->
++<PreferenceScreen
++    xmlns:android="http://schemas.android.com/apk/res/android">
++
++    <ListPreference
++        android:defaultValue="0"
++        android:entries="@array/ai_key_action_entries"
++        android:entryValues="@array/ai_key_action_values"
++        android:key="ai_key_action"
++        android:title="@string/ai_key_action_title" />
++
++    <!-- entries/entryValues заполняются в рантайме списком установленных
++         приложений, см. AiKeySettingsFragment.loadApps() -->
++    <ListPreference
++        android:key="ai_key_app"
++        android:title="@string/ai_key_app_title" />
++
++</PreferenceScreen>
+diff --git a/parts/res/xml/display_extras.xml b/parts/res/xml/display_extras.xml
+new file mode 100644
+index 0000000..9bd6b1b
+--- /dev/null
++++ b/parts/res/xml/display_extras.xml
+@@ -0,0 +1,19 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- SPDX-License-Identifier: Apache-2.0 -->
++<PreferenceScreen
++    xmlns:android="http://schemas.android.com/apk/res/android">
++
++    <!-- entries/entryValues заполняются в рантайме из Display.getSupportedModes(),
++         см. DisplayExtrasFragment.loadRates() -->
++    <ListPreference
++        android:key="refresh_rate"
++        android:summary="@string/refresh_rate_summary"
++        android:title="@string/refresh_rate_title" />
++
++    <SwitchPreferenceCompat
++        android:defaultValue="true"
++        android:key="window_blurs"
++        android:summary="@string/window_blurs_summary"
++        android:title="@string/window_blurs_title" />
++
++</PreferenceScreen>
+diff --git a/parts/src/org/lineageos/settings/cepheus/AiKeySettingsActivity.java b/parts/src/org/lineageos/settings/cepheus/AiKeySettingsActivity.java
+new file mode 100644
+index 0000000..1bd0bb1
+--- /dev/null
++++ b/parts/src/org/lineageos/settings/cepheus/AiKeySettingsActivity.java
+@@ -0,0 +1,25 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++package org.lineageos.settings.cepheus;
++
++import android.os.Bundle;
++
++import com.android.settingslib.collapsingtoolbar.CollapsingToolbarBaseActivity;
++
++public class AiKeySettingsActivity extends CollapsingToolbarBaseActivity {
++
++    private static final String TAG_AI_KEY = "aikey";
++
++    @Override
++    protected void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++
++        getSupportFragmentManager()
++                .beginTransaction()
++                .replace(com.android.settingslib.collapsingtoolbar.R.id.content_frame,
++                        new AiKeySettingsFragment(), TAG_AI_KEY)
++                .commit();
++    }
++}
+diff --git a/parts/src/org/lineageos/settings/cepheus/AiKeySettingsFragment.java b/parts/src/org/lineageos/settings/cepheus/AiKeySettingsFragment.java
+new file mode 100644
+index 0000000..b440860
+--- /dev/null
++++ b/parts/src/org/lineageos/settings/cepheus/AiKeySettingsFragment.java
+@@ -0,0 +1,132 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Экран «Боковая кнопка». Пишет выбор в Settings.System, откуда его читает
++ * org.lineageos.settings.cepheus.keyhandler.KeyHandler, живущий внутри
++ * system_server. Поэтому обычный SharedPreferences тут не годится —
++ * system_server не имеет доступа к приватным настройкам приложения.
++ *
++ * Запись в Settings.System разрешена, потому что приложение подписано
++ * платформенным ключом и работает под android.uid.system (см. манифест).
++ */
++
++package org.lineageos.settings.cepheus;
++
++import android.content.Intent;
++import android.content.pm.PackageManager;
++import android.content.pm.ResolveInfo;
++import android.os.Bundle;
++import android.provider.Settings;
++
++import androidx.preference.ListPreference;
++import androidx.preference.Preference;
++
++import com.android.settingslib.widget.SettingsBasePreferenceFragment;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++
++public class AiKeySettingsFragment extends SettingsBasePreferenceFragment
++        implements Preference.OnPreferenceChangeListener {
++
++    /** Должно совпадать с KeyHandler.SETTING_ACTION / SETTING_PACKAGE. */
++    private static final String SETTING_ACTION = "cepheus_ai_key_action";
++    private static final String SETTING_PACKAGE = "cepheus_ai_key_package";
++
++    private static final String PREF_ACTION = "ai_key_action";
++    private static final String PREF_APP = "ai_key_app";
++
++    private static final int ACTION_ASSISTANT = 0;
++    private static final int ACTION_APP = 1;
++
++    private ListPreference mActionPref;
++    private ListPreference mAppPref;
++
++    @Override
++    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
++        setPreferencesFromResource(R.xml.ai_key_settings, rootKey);
++
++        mActionPref = findPreference(PREF_ACTION);
++        mAppPref = findPreference(PREF_APP);
++
++        // Значения храним в Settings.System, а не в SharedPreferences.
++        mActionPref.setPersistent(false);
++        mAppPref.setPersistent(false);
++
++        loadApps();
++
++        final int action = Settings.System.getInt(
++                requireContext().getContentResolver(), SETTING_ACTION, ACTION_ASSISTANT);
++        mActionPref.setValue(String.valueOf(action));
++        mActionPref.setOnPreferenceChangeListener(this);
++
++        final String pkg = Settings.System.getString(
++                requireContext().getContentResolver(), SETTING_PACKAGE);
++        if (pkg != null && !pkg.isEmpty()) {
++            mAppPref.setValue(pkg);
++        }
++        mAppPref.setOnPreferenceChangeListener(this);
++
++        updateState(action);
++    }
++
++    /** Список приложений, у которых есть значок запуска. */
++    private void loadApps() {
++        final PackageManager pm = requireContext().getPackageManager();
++
++        final Intent launcherIntent = new Intent(Intent.ACTION_MAIN, null);
++        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
++
++        final List<ResolveInfo> apps = pm.queryIntentActivities(launcherIntent, 0);
++        Collections.sort(apps, new ResolveInfo.DisplayNameComparator(pm));
++
++        final List<CharSequence> labels = new ArrayList<>();
++        final List<CharSequence> values = new ArrayList<>();
++        for (ResolveInfo info : apps) {
++            final String pkg = info.activityInfo.packageName;
++            if (values.contains(pkg)) {
++                continue; // у приложения может быть несколько activity в лаунчере
++            }
++            labels.add(info.loadLabel(pm));
++            values.add(pkg);
++        }
++
++        mAppPref.setEntries(labels.toArray(new CharSequence[0]));
++        mAppPref.setEntryValues(values.toArray(new CharSequence[0]));
++    }
++
++    private void updateState(int action) {
++        mAppPref.setVisible(action == ACTION_APP);
++
++        final CharSequence actionEntry = mActionPref.getEntry();
++        if (actionEntry != null) {
++            mActionPref.setSummary(actionEntry);
++        }
++
++        final CharSequence appEntry = mAppPref.getEntry();
++        mAppPref.setSummary(appEntry != null ? appEntry : getString(R.string.ai_key_app_none));
++    }
++
++    @Override
++    public boolean onPreferenceChange(Preference preference, Object newValue) {
++        if (preference == mActionPref) {
++            final int action = Integer.parseInt((String) newValue);
++            Settings.System.putInt(
++                    requireContext().getContentResolver(), SETTING_ACTION, action);
++            mActionPref.setValue((String) newValue);
++            updateState(action);
++            return true;
++        }
++
++        if (preference == mAppPref) {
++            Settings.System.putString(
++                    requireContext().getContentResolver(), SETTING_PACKAGE, (String) newValue);
++            mAppPref.setValue((String) newValue);
++            updateState(Integer.parseInt(mActionPref.getValue()));
++            return true;
++        }
++
++        return false;
++    }
++}
+diff --git a/parts/src/org/lineageos/settings/cepheus/BootCompletedReceiver.java b/parts/src/org/lineageos/settings/cepheus/BootCompletedReceiver.java
+new file mode 100644
+index 0000000..39c6e2c
+--- /dev/null
++++ b/parts/src/org/lineageos/settings/cepheus/BootCompletedReceiver.java
+@@ -0,0 +1,48 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Засев значений по умолчанию для Circle to Search.
++ *
++ * Почему это нужно. NavBarHelper.java:494-506 берёт признак «долгое нажатие
++ * на полоску навигации вызывает поиск» так:
++ *     Settings.Secure.getInt(SEARCH_ALL_ENTRYPOINTS_ENABLED, значение_ресурса)
++ * Ресурсный дефолт (config_searchAllEntrypointsEnabledDefault) равен true,
++ * то есть при ОТСУТСТВУЮЩЕЙ настройке всё работает. Но если ключ однажды
++ * записан нулём — ресурс уже не спасает, и функция молча выключена.
++ *
++ * Поэтому пишем единицу только когда ключа нет вообще. Это именно значение
++ * по умолчанию, а не принуждение: переключатель в
++ * «Настройки -> Жесты -> Навигация» продолжает работать, и выбор
++ * пользователя не затирается при следующей загрузке.
++ */
++
++package org.lineageos.settings.cepheus;
++
++import android.content.BroadcastReceiver;
++import android.content.ContentResolver;
++import android.content.Context;
++import android.content.Intent;
++import android.provider.Settings;
++import android.util.Log;
++
++public class BootCompletedReceiver extends BroadcastReceiver {
++
++    private static final String TAG = "CepheusParts";
++
++    /** Ключи те же, что читает NavBarHelper. */
++    private static final String[] DEFAULT_ON = {
++        Settings.Secure.SEARCH_ALL_ENTRYPOINTS_ENABLED,
++        Settings.Secure.ASSIST_LONG_PRESS_HOME_ENABLED,
++    };
++
++    @Override
++    public void onReceive(Context context, Intent intent) {
++        final ContentResolver cr = context.getContentResolver();
++        for (String key : DEFAULT_ON) {
++            if (Settings.Secure.getString(cr, key) == null) {
++                Settings.Secure.putInt(cr, key, 1);
++                Log.i(TAG, "Выставлено значение по умолчанию: " + key + "=1");
++            }
++        }
++    }
++}
+diff --git a/parts/src/org/lineageos/settings/cepheus/DisplayExtrasActivity.java b/parts/src/org/lineageos/settings/cepheus/DisplayExtrasActivity.java
+new file mode 100644
+index 0000000..c168f98
+--- /dev/null
++++ b/parts/src/org/lineageos/settings/cepheus/DisplayExtrasActivity.java
+@@ -0,0 +1,25 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++package org.lineageos.settings.cepheus;
++
++import android.os.Bundle;
++
++import com.android.settingslib.collapsingtoolbar.CollapsingToolbarBaseActivity;
++
++public class DisplayExtrasActivity extends CollapsingToolbarBaseActivity {
++
++    private static final String TAG_DISPLAY = "displayextras";
++
++    @Override
++    protected void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++
++        getSupportFragmentManager()
++                .beginTransaction()
++                .replace(com.android.settingslib.collapsingtoolbar.R.id.content_frame,
++                        new DisplayExtrasFragment(), TAG_DISPLAY)
++                .commit();
++    }
++}
+diff --git a/parts/src/org/lineageos/settings/cepheus/DisplayExtrasFragment.java b/parts/src/org/lineageos/settings/cepheus/DisplayExtrasFragment.java
+new file mode 100644
+index 0000000..c448898
+--- /dev/null
++++ b/parts/src/org/lineageos/settings/cepheus/DisplayExtrasFragment.java
+@@ -0,0 +1,134 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Экран «Экран (Mi 9)»: размытие окон и выбор частоты обновления.
++ *
++ * РАЗМЫТИЕ. В AOSP переключатель есть только в «Для разработчиков»
++ * (development_settings.xml, ключ enable_blurs_on_windows). Здесь тот же
++ * Settings.Global.DISABLE_WINDOW_BLURS вынесен в обычные настройки.
++ * Применяется мгновенно: WindowManager слушает значение через ContentObserver
++ * (BlurController.java:82) и гасит разом все размытия — и фон шторки, и
++ * переходы при открытии/закрытии приложений, это один механизм.
++ *
++ * ЧАСТОТА. Штатный переключатель «Плавное изображение» умеет только
++ * «60 или максимум». Панель cepheus после правки dtbo отдаёт четыре режима
++ * (60/72/81/90), поэтому здесь полный список. Пишем в
++ * Settings.System.PEAK_REFRESH_RATE — её читает DisplayModeDirector:1262,
++ * подставляя config_defaultPeakRefreshRate как значение по умолчанию.
++ * MIN_REFRESH_RATE оставляем нулём: это позволяет системе опускать частоту
++ * на статичной картинке и экономить батарею. Выбранное значение —
++ * это потолок, а не жёсткая фиксация.
++ */
++
++package org.lineageos.settings.cepheus;
++
++import android.os.Bundle;
++import android.provider.Settings;
++import android.view.Display;
++
++import androidx.preference.ListPreference;
++import androidx.preference.Preference;
++import androidx.preference.SwitchPreferenceCompat;
++
++import com.android.settingslib.widget.SettingsBasePreferenceFragment;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.TreeSet;
++
++public class DisplayExtrasFragment extends SettingsBasePreferenceFragment
++        implements Preference.OnPreferenceChangeListener {
++
++    private static final String PREF_BLUR = "window_blurs";
++    private static final String PREF_RATE = "refresh_rate";
++
++    private SwitchPreferenceCompat mBlurPref;
++    private ListPreference mRatePref;
++
++    @Override
++    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
++        setPreferencesFromResource(R.xml.display_extras, rootKey);
++
++        mBlurPref = findPreference(PREF_BLUR);
++        mRatePref = findPreference(PREF_RATE);
++
++        mBlurPref.setPersistent(false);
++        mRatePref.setPersistent(false);
++
++        // В системе хранится «выключено», в интерфейсе показываем «включено».
++        final boolean disabled = Settings.Global.getInt(
++                requireContext().getContentResolver(),
++                Settings.Global.DISABLE_WINDOW_BLURS, 0) == 1;
++        mBlurPref.setChecked(!disabled);
++        mBlurPref.setOnPreferenceChangeListener(this);
++
++        loadRates();
++        mRatePref.setOnPreferenceChangeListener(this);
++        updateRateSummary();
++    }
++
++    /**
++     * Список частот берём у самого дисплея, а не зашиваем числами: если
++     * режимы в dtbo изменятся, экран подстроится сам. Если панель отдаёт
++     * только 60 — пункт прячем, чтобы не вводить в заблуждение.
++     */
++    private void loadRates() {
++        final Display display = requireContext().getDisplay();
++        final TreeSet<Integer> rates = new TreeSet<>();
++        if (display != null) {
++            for (Display.Mode mode : display.getSupportedModes()) {
++                rates.add(Math.round(mode.getRefreshRate()));
++            }
++        }
++
++        if (rates.size() < 2) {
++            mRatePref.setVisible(false);
++            return;
++        }
++
++        final List<CharSequence> labels = new ArrayList<>();
++        final List<CharSequence> values = new ArrayList<>();
++        for (Integer r : rates) {
++            labels.add(r + " " + getString(R.string.refresh_rate_hz));
++            values.add(String.valueOf(r));
++        }
++        mRatePref.setEntries(labels.toArray(new CharSequence[0]));
++        mRatePref.setEntryValues(values.toArray(new CharSequence[0]));
++
++        final float peak = Settings.System.getFloat(
++                requireContext().getContentResolver(),
++                Settings.System.PEAK_REFRESH_RATE, rates.last());
++        mRatePref.setValue(String.valueOf(Math.round(peak)));
++    }
++
++    private void updateRateSummary() {
++        final CharSequence entry = mRatePref.getEntry();
++        if (entry != null) {
++            mRatePref.setSummary(entry);
++        }
++    }
++
++    @Override
++    public boolean onPreferenceChange(Preference preference, Object newValue) {
++        if (preference == mBlurPref) {
++            final boolean enabled = (Boolean) newValue;
++            Settings.Global.putInt(requireContext().getContentResolver(),
++                    Settings.Global.DISABLE_WINDOW_BLURS, enabled ? 0 : 1);
++            return true;
++        }
++
++        if (preference == mRatePref) {
++            final float rate = Float.parseFloat((String) newValue);
++            Settings.System.putFloat(requireContext().getContentResolver(),
++                    Settings.System.PEAK_REFRESH_RATE, rate);
++            // ноль = разрешаем системе опускать частоту ради батареи
++            Settings.System.putFloat(requireContext().getContentResolver(),
++                    Settings.System.MIN_REFRESH_RATE, 0f);
++            mRatePref.setValue((String) newValue);
++            updateRateSummary();
++            return true;
++        }
++
++        return false;
++    }
++}
+diff --git a/rro_overlays/FrameworkResOverlayDevice/res/values/config.xml b/rro_overlays/FrameworkResOverlayDevice/res/values/config.xml
+index 9340973..92cc3ea 100644
+--- a/rro_overlays/FrameworkResOverlayDevice/res/values/config.xml
++++ b/rro_overlays/FrameworkResOverlayDevice/res/values/config.xml
+@@ -695,4 +695,50 @@
+ 
+     <!-- If true, the display will be shifted around in ambient mode. -->
+     <bool name="config_enableBurnInProtection">true</bool>
++
++    <!-- Обработчик боковой клавиши: добавлено build-pixelos-cepheus.sh (P7).
++         Загружается PhoneWindowManager через PathClassLoader. -->
++    <string-array name="config_deviceKeyHandlerLibs" translatable="false">
++        <item>/system_ext/framework/cepheus-keyhandler.jar</item>
++    </string-array>
++
++    <string-array name="config_deviceKeyHandlerClasses" translatable="false">
++        <item>org.lineageos.settings.cepheus.keyhandler.KeyHandler</item>
++    </string-array>
++    <!-- Частота обновления: добавлено build-pixelos-cepheus.sh (P8).
++         Панель умеет 60/72/81/90, см. правку dsi-panel-samsung-fhd-ea8076-cmd.dtsi.
++         Пик включается переключателем «Плавное изображение» в настройках экрана. -->
++    <integer name="config_defaultRefreshRate">60</integer>
++    <integer name="config_defaultPeakRefreshRate">90</integer>
++    <!-- Цветовые режимы: добавлено build-pixelos-cepheus.sh (P6).
++         Непустой массив включает выбор в Настройки -> Экран -> Цвета. -->
++    <integer-array name="config_availableColorModes">
++        <item>0</item> <!-- NATURAL:   насыщенность 1.0, MANAGED -->
++        <item>1</item> <!-- BOOSTED:   насыщенность 1.1, MANAGED -->
++        <item>2</item> <!-- SATURATED: насыщенность 1.0, UNMANAGED (родной режим панели) -->
++        <item>3</item> <!-- AUTOMATIC: насыщенность 1.0, ENHANCED -->
++    </integer-array>
++
++    <!-- Цветовое пространство композиции НЕ навязываем: COLOR_MODE_DEFAULT (0)
++         означает «система подбирает сама под содержимое». Попытка жёстко
++         назначить sRGB ломала цвет на этой панели: HWC с QDCM-калибровкой
++         корректно отрабатывает только родной режим, поэтому правильно
++         выглядели лишь «Насыщенные» (UNMANAGED). Режимы и так различаются
++         между собой матрицей насыщенности и managed/unmanaged/enhanced. -->
++    <integer-array name="config_displayCompositionColorModes">
++        <item>0</item>
++        <item>1</item>
++        <item>2</item>
++        <item>3</item>
++    </integer-array>
++
++    <integer-array name="config_displayCompositionColorSpaces">
++        <item>0</item>
++        <item>0</item>
++        <item>0</item>
++        <item>0</item>
++    </integer-array>
++    <!-- Отступ контента от скруглённого угла: добавлено (P9).
++         Углы экрана 89px (~32dp), в AOSP этот отступ 0dp. -->
++    <dimen name="rounded_corner_content_padding">12dp</dimen>
+ </resources>
